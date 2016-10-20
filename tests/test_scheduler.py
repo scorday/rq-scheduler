@@ -119,7 +119,7 @@ class TestScheduler(RQTestCase):
         a custom timeout.
         """
         timeout = 13
-        job = self.scheduler.enqueue_at(datetime.utcnow(), say_hello, timeout=timeout)
+        job = self.scheduler.enqueue_at(datetime.utcnow(), say_hello, job_params=dict(timeout=timeout))
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual(job_from_queue.timeout, timeout)
 
@@ -145,7 +145,7 @@ class TestScheduler(RQTestCase):
         a custom timeout.
         """
         timeout = 13
-        job = self.scheduler.enqueue_in(timedelta(minutes=1), say_hello, timeout=timeout)
+        job = self.scheduler.enqueue_in(timedelta(minutes=1), say_hello, job_params=dict(timeout=timeout))
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual(job_from_queue.timeout, timeout)
 
@@ -295,7 +295,7 @@ class TestScheduler(RQTestCase):
         """
         Ensure that interval and repeat attributes are correctly saved.
         """
-        job = self.scheduler.schedule(datetime.utcnow(), say_hello, interval=10, repeat=11)
+        job = self.scheduler.schedule(say_hello, interval=10, repeat=11)
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual(job_from_queue.meta['interval'], 10)
         self.assertEqual(job_from_queue.meta['repeat'], 11)
@@ -360,7 +360,7 @@ class TestScheduler(RQTestCase):
     def test_repeat_without_interval_raises_error(self):
         # Ensure that an error is raised if repeat is specified without interval
         def create_job():
-            self.scheduler.schedule(datetime.utcnow(), say_hello, repeat=11)
+            self.scheduler.schedule(say_hello, repeat=11)
         self.assertRaises(ValueError, create_job)
 
     def test_job_with_intervals_get_rescheduled(self):
@@ -369,7 +369,7 @@ class TestScheduler(RQTestCase):
         """
         time_now = datetime.utcnow()
         interval = 10
-        job = self.scheduler.schedule(time_now, say_hello, interval=interval)
+        job = self.scheduler.schedule(say_hello, interval=interval)
         self.scheduler.enqueue_job(job)
         self.assertIn(job.id,
             tl(self.testconn.zrange(self.scheduler.scheduled_jobs_key, 0, 1)))
@@ -409,13 +409,13 @@ class TestScheduler(RQTestCase):
         time_now = datetime.utcnow()
         interval = 10
         # If job is repeated once, the job shouldn't be put back in the queue
-        job = self.scheduler.schedule(time_now, say_hello, interval=interval, repeat=1)
+        job = self.scheduler.schedule(say_hello, interval=interval, repeat=1)
         self.scheduler.enqueue_job(job)
         self.assertNotIn(job.id,
             tl(self.testconn.zrange(self.scheduler.scheduled_jobs_key, 0, 1)))
 
         # If job is repeated twice, it should only be put back in the queue once
-        job = self.scheduler.schedule(time_now, say_hello, interval=interval, repeat=2)
+        job = self.scheduler.schedule(say_hello, interval=interval, repeat=2)
         self.scheduler.enqueue_job(job)
         self.assertIn(job.id,
             tl(self.testconn.zrange(self.scheduler.scheduled_jobs_key, 0, 1)))
@@ -427,7 +427,7 @@ class TestScheduler(RQTestCase):
         """
         Ensure jobs that don't exist when queued are removed from the scheduler.
         """
-        job = self.scheduler.schedule(datetime.utcnow(), say_hello)
+        job = self.scheduler.schedule(say_hello)
         job.cancel()
         self.scheduler.get_jobs_to_queue()
         self.assertIn(job.id, tl(self.testconn.zrange(
@@ -441,7 +441,7 @@ class TestScheduler(RQTestCase):
         """
         Ensure periodic jobs set result_ttl to infinite.
         """
-        job = self.scheduler.schedule(datetime.utcnow(), say_hello, interval=5)
+        job = self.scheduler.schedule(say_hello, interval=5)
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual(job.result_ttl, -1)
 
@@ -449,7 +449,7 @@ class TestScheduler(RQTestCase):
         """
         Ensure periodic jobs sets correctly ttl.
         """
-        job = self.scheduler.schedule(datetime.utcnow(), say_hello, interval=5, ttl=4)
+        job = self.scheduler.schedule(say_hello, interval=5, ttl=4)
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual(job.ttl, 4)
 
@@ -457,7 +457,7 @@ class TestScheduler(RQTestCase):
         """
         Ensure that ID is passed to RQ by schedule.
         """
-        job = self.scheduler.schedule(datetime.utcnow(), say_hello, interval=5, id='id test')
+        job = self.scheduler.schedule(say_hello, interval=5, id='id test')
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual('id test', job.id)
 
@@ -465,7 +465,7 @@ class TestScheduler(RQTestCase):
         """
         Ensure that description is passed to RQ by schedule.
         """
-        job = self.scheduler.schedule(datetime.utcnow(), say_hello, interval=5, description='description')
+        job = self.scheduler.schedule(say_hello, interval=5, description='description')
         job_from_queue = Job.fetch(job.id, connection=self.testconn)
         self.assertEqual('description', job.description)
 

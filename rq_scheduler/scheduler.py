@@ -80,11 +80,13 @@ class Scheduler(object):
                          kwargs=kwargs, result_ttl=result_ttl, ttl=ttl, id=id,
                          description=description, timeout=timeout)
         job.origin = queue_name or self.queue_name
+
         if commit:
             job.save()
+
         return job
 
-    def enqueue_at(self, scheduled_time, func, *args, **kwargs):
+    def enqueue_at(self, scheduled_time, func, *args, job_params=None, **kwargs):
         """
         Pushes a job to the scheduler queue. The scheduled queue is a Redis sorted
         set ordered by timestamp - which in this case is job's scheduled execution time.
@@ -101,37 +103,53 @@ class Scheduler(object):
         scheduler = Scheduler(queue_name='default', connection=redis)
         scheduler.enqueue_at(datetime(2020, 1, 1), func, 'argument', keyword='argument')
         """
-        timeout = kwargs.pop('timeout', None)
 
-        job = self._create_job(func, args=args, kwargs=kwargs, timeout=timeout)
+        if not job_params:
+            job_params = {}
+
+        job = self._create_job(func, args=args, kwargs=kwargs,
+                               **job_params)
+
         self.connection._zadd(self.scheduled_jobs_key,
                               to_unix(scheduled_time),
                               job.id)
         return job
 
-    def enqueue_in(self, time_delta, func, *args, **kwargs):
+    def enqueue_in(self, time_delta, func, *args, job_params=None, **kwargs):
         """
         Similar to ``enqueue_at``, but accepts a timedelta instead of datetime object.
         The job's scheduled execution time will be calculated by adding the timedelta
         to datetime.utcnow().
         """
-        timeout = kwargs.pop('timeout', None)
 
-        job = self._create_job(func, args=args, kwargs=kwargs, timeout=timeout)
+        if not job_params:
+            job_params = {}
+
+        job = self._create_job(func, args=args, kwargs=kwargs,
+                               **job_params)
+
         self.connection._zadd(self.scheduled_jobs_key,
                               to_unix(datetime.utcnow() + time_delta),
                               job.id)
         return job
 
-    def schedule(self, scheduled_time, func, args=None, kwargs=None,
+    def schedule(self, func, scheduled_time=None, args=None, kwargs=None,
                  interval=None, repeat=None, result_ttl=None, ttl=None,
                  timeout=None, id=None, description=None, queue_name=None):
         """
         Schedule a job to be periodically executed, at a certain interval.
         """
+
         # Set result_ttl to -1 for periodic jobs, if result_ttl not specified
         if interval is not None and result_ttl is None:
             result_ttl = -1
+
+        if interval and 0 < result_ttl < interval:
+            raise ValueError("With result_ttl < interval job will run only once")
+
+        if not scheduled_time:
+            scheduled_time = datetime.utcnow()
+
         job = self._create_job(func, args=args, kwargs=kwargs, commit=False,
                                result_ttl=result_ttl, ttl=ttl, id=id,
                                description=description, queue_name=queue_name,
@@ -143,7 +161,9 @@ class Scheduler(object):
             job.meta['repeat'] = int(repeat)
         if repeat and interval is None:
             raise ValueError("Can't repeat a job without interval argument")
+
         job.save()
+
         self.connection._zadd(self.scheduled_jobs_key,
                               to_unix(scheduled_time),
                               job.id)
@@ -237,6 +257,7 @@ class Scheduler(object):
         If either of offset or length is specified, then both must be, or
         an exception will be raised.
         """
+
         def epoch_to_datetime(epoch):
             return from_unix(float(epoch))
 
